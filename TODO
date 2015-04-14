@@ -1,0 +1,63 @@
+TODO
+
+
+2015-03-23	Release 0.01
+------------------------
+
+* Verificar se o argumento "nao_subdir" esta sendo tratado e respeitado
+	corretamente em todos os pontos onde tem implicancia.
+		- em revisao de analise, observou-se que o argumento, bem como a
+			funcao associada a ele, nao tinham mais necessidade, portanto,
+			este foi completamente removido da implementacao
+			(status: Ok)
+
+* Verificar se o argumento "quit_on_err" esta sendo testado e respeitado
+	ao longo de todas as rotinas.
+		- scripts/pack_pdv	: Ok
+		- scripts/unpack_pdv	: Ok
+		- lib/SGI/PackPDV.pm	: Ok
+
+
+2015-03-25  Release 0.02
+------------------------
+
+* Implementar, com base no manifesto, blocos para processamento de rotinas
+	para execucao pre e pos backup, e pre e pos instalacao.
+	(status: Ok)
+
+* Documentar, em formato POD, os scripts:
+	- pack_pdv   : Ok
+	- unpack_pdv : Ok
+
+
+2015-04-07	Release 0.03
+------------------------
+
+* Ao executar scripts de pre e pos, backup e instalacao, faze-lo a partir da
+	pasta definida por SGI_DIR.
+		- scripts/unpack_pdv	: Ok
+
+* Garantir que o caminho passado em SGI_DIR seja terminado com "/".
+		- scripts/unpack_pdv	: Ok
+
+* Garantir que o caminho passado para upload de FTP seja terminado com "/".
+		- scripts/pack_pdv	; Ok
+
+* Quando FTP nao for anonimo, e a senha for '-', oferecer prompt para que o
+	usuario informe sua senha, evitando deixa-la grava em historico de shell.
+		- scripts/pack_pdv	: Ok
+		- scripts/unpack_pdv	: Ok
+
+
+2015-04-14	Release 0.04
+------------------------
+
+* Impedir que unpack_pdv seja invocado, sem nenhum argumento de acao, impe-
+	dindo assim que faca download do manifesto e interrompa a execucao.
+	(status: Ok)
+
+
+2015-04-14	Release 0.05
+------------------------
+* Ajustar download, do aplicativo unpack_pdv, para trabalhar em modo "binario".
+	(status: Ok)

@@ -1,0 +1,16 @@
+Changes
+lib/SGI/PackPDV.pm
+lib/SGI/GetPassword.pm
+Makefile.PL
+manifesto_PDV.txt
+MANIFEST			This list of files
+README
+scripts/pack_pdv
+scripts/unpack_pdv
+TODO
+t/00-load.t
+t/01-password.t
+t/boilerplate.t
+t/manifest.t
+t/pod-coverage.t
+t/pod.t

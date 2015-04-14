@@ -1,0 +1,64 @@
+Historico de revisoes de SGI-PackPDV
+
+0.01		13-03-015/18:00
+			Primeiro release. De uso restrito ao pessoal de desenvolvimento da
+			SGI Sistemas.
+			Testado inicialmente, em ambiente de producao do host 172.16.100.124.
+
+0.02		20-03-2015/23:00
+			Incluindo processamento de scripts pre e pos, backup e instalacao.
+
+0.03		07-04-2015/11:51
+			Corrigidas restricoes 'ExistingPath' e 'ExistingScript', pois nao
+			permitiam que o valor fosse '-' (indicando para ser ignorado).
+
+			Corrigidos os numeros de release na documentacao do projeto (estava
+			constando '0.1', '0.2', etc, ao inves de '0.01'...)
+
+			Incluido mecanismo de verificacao pos download, utilizando o tamanho
+			do arquivo remoto para comparacao com o arquivo local. A difereca
+			indica possivel corrupcao durante a transferencia.
+
+			Alterada execucao de scripts (PRE_BACKUP, POS_BACKUP, PRE_INSTALL e
+			POS_INSTALL) de maneira que estes sejam executados a partir de
+			SGI_DIR. Com efeito, o bloco de execucao teria a seguinte forma:
+				$ cd <SGI_DIR>
+				$ <script>
+
+			Alterado script pack_pdv para que este valide o argumento --url, e
+			caso a string passada nao seja terminada por "/", este caracter seja
+			entao acrescentado.
+
+			Incluida validacao, no script unpack_pdv, para que o caminho indicado
+			pelo argumento --sgi_dir, seja sempre terminado por "/". Caso o
+			usuario nao o tenha passado, este sera acrescentado no processo de
+			validacao.
+
+			Acrescentado aa distribuicao, o pacote SGI::GetPassword. Este 
+			implementa uma classe estatica, cuja utilidade e' a de coletar a se-
+			nha diretamente do terminal, obscurecendo-a com "*" (impedindo o echo
+			da senha digitada).
+			Os scripts pack_pdv e unpack_pdv foram alterados de modo que, ao
+			realizar o parsing da URL de FTP, caso a senha seja '-', sera entao,
+			solicitada atraves de prompt (utilizando a nova classe 
+			SGI::GetPassword).
+
+0.04		14-04-2015/10:15
+			Corrigidos bugs do unpack_pdv.
+			Obs.: remocao de variaveis nao utilizadas e declaracao de novas,
+					necessarias ao novo formato de funcionamento do download
+					de FTP.
+			Passada a validacao de acoes a executar para ANTES do download do
+			manifesto. Assim, se evita que seja efetuado o download do arquivo,
+			e na sequencia, a execucao seja abortada, por falto de definicao
+			de que acoes devem ser realizadas.
+
+0.05		14-04-2015/10:47
+			Ajustado conexao de FTP para realizar download em modo "binario",
+			pois o aplicativo "unpack_pdv" estava produzindo erro por baixar
+			arquivos .zip em modo ASCII.
+
+0.06		14-04-2015/11:31
+			Incluido workaround para evitar uso de variavel nao inicializada,
+			no teste de tamanho do arquivo, apos a realizadao do FTP, no
+			script 'unpack_pdv'.

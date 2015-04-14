@@ -1,0 +1,941 @@
+#!/usr/bin/perl
+
+=head1 NOME
+
+unpack_pdv - Utilitario para instalacao de pacotes.
+
+=head1 SINOPSE
+
+O processo de instalacao e/ou atualizacao de sistemas desenvolvidos pela
+SGI Sistemas, tem fases distintas:
+
+=over 3
+
+=item * download
+
+Onde os elementos necessarios aa instalacao sao obtidos diretamente do
+repositorio (FTP) da SGI, e copiados para uma pasta temporaria no I<host>
+onde deverao ser instalados.
+
+=item * check
+
+Os elementos copiados tem sua integridade testada, atraves da validacao de
+codigos (I<hashes>) MD5. Assim, nenhum arquivo corrompido ou diferente da
+produzida para o I<release> em questao sera inserido no ambiente instalado.
+
+=item * backup
+
+E' realizada copia de segunca de todos os arquivos constantes no pacote de
+instalacao, de modo a permitir um retrocesso, caso algum problema inesperado
+venha a ocorrer.
+
+=item * install
+
+Finalmente, o conteudo do ambiente local e' substituido pelo conteudo obtido
+do repositorio (FTP) da SGI.
+
+=back
+
+=head1 SINTAXE
+
+A sintaxe pode ser baseada no manifesto do release:
+
+    unpack_pdv -m | --manifesto <url_manifesto>
+
+Onde C<< <url_manifesto> >> representa uma URL de FTP, conforme modelo:
+
+    ftp://usr:pwd@srv.dominio/raiz/path/do/release/manifesto.txt
+
+A partir do conteudo de C<manifesto.txt> serao definidos os argumentos:
+
+    --produto=...    # Contido no manifesto.txt
+    --versao=...     # Contido no manifesto.txt
+    --release=...    # Contido no manifesto.txt
+    --url=...        # ftp://usr:pwd@srv.dominio/raz/path/do/release/
+    --download       # Flag contida em manifesto.txt
+    --check          # Flag contida em manifesto.txt
+    --backup         # Flag contida em manifesto.txt
+    --install        # Flag contida em manifesto.txt
+
+Ou alternativamente, a linha de comando pode definir individualmente cada um de
+seus argumentos:
+
+    unpack_pdv \
+      -p | --produto <identificacao> \ # Ex.: "teste"
+      -v | --versao <versao> \         # Ex.: "1.0"
+      -r | --release <release> \       # Ex.: "1"
+      -u | --url <url> \     # Ex.: "ftp://usr:pwd@srv.dominio/raiz/"
+      -s | --sgi_dir <path> \          # Default: "/sgi/pdv/"
+      -d | --download \                # Habilita download de componentes
+      -c | --check \                   # Habilita checagem de componentes
+      -b | --backup \                  # Habilita backup da instalacao local
+      -i | --install \                 # Habilita instalacao de componentes
+      -e | --echo \                    # Habilita echo 'verbose'
+      -q | --quit_on_warn              # Forca interrupcao de lacos de 
+                                       # processamento de arquivos em caso de
+                                       # qualquer falha
+
+As I<flags> C<--echo> e C<--quit_on_warn> sao opcionais, e, caso omitidos sao
+assumidos valores I<false> para ambas.
+
+Opcionalmente, as flags C<--download>, C<--check>, C<--backup> e C<--install>,
+quando todas definidas como I<true>, podem ser substituidas por C<--all>. Desta
+forma, o aplicativo sera instruido a realizar a operacao completa, composta 
+pelas quatro fases.
+
+Caso a linha de comando defina simultaneamente C<--manifesto> e outros 
+argumentos nele contidos, o manifesto sera processado, contudo os parametros
+definidos na linha de comando tem prioridade, e portanto, nao serao 
+redefinidos.
+
+=head1 MANIFESTO
+
+O manifesto e' um arquivo contendo as informacoes necessarios aa producao
+do release. Seu conteudo segue o seguinte formato:
+
+    # Exemplo de arquivo de manifesto
+    
+    # Dados do pacote
+    PRODUTO: teste
+    VERSAO: 1.0
+    RELEASE: 1
+    
+    # Destino (padrao) da instalacao
+    SGI_DIR: /sgi/pdv/
+    
+    # Fases da instalacao
+    # Flags definidas como "0" = false ou "1" = true
+    DOWNLOAD: 1
+    CHECK: 1
+    BACKUP: 1
+    INSTALL: 1
+    
+    # Fontes de scripts
+    # IMPORTANTE: o processamento de I<scripts> ainda
+    #             nao esta disponivel nesta versao
+    PRE_BACKUP: pre_backup.sh
+    POS_BACKUP: pos_backup.sh
+    PRE_INSTALL: pre_install.sh
+    POS_INSTALL: pos_install.sh
+
+=head2 IMPORTANTE
+
+No modelo de manifesto descrito no item anterior, figuram apenas os elementos
+necessarios para instalacao, ou seja, normalmente serao encontrados manifestos
+com diversos outros campos. Estes, necessarios ao processo de criacao do
+I<release>.
+
+=head1 AUTOR
+
+Chris Robert Tonini, C<< <chrisrtoniniE<64>gmail.com> >>
+
+
+=head1 SUPORTE
+
+Voce pode encontrar documentacao para este aplicativo atraves do comando:
+
+    perldoc unpack_pdv
+
+ou ainda;
+
+    man unpack_pdv
+
+Tambem,pode-se obter informacoes sobre seu modulo:
+
+    perldoc SGI:PackPDV
+
+
+=head1 INFORMACOES
+
+=head1 LICENCA E DIREITOS AUTORAIS
+
+Copyright 2015 Chris Robert Tonini.
+
+Este programa e' software livre; voce pode redistribui-lo e/ou
+modifica-lo sob os termos da GNU Lesser General Public License,
+publicada pela Free Software Foundation; em sua versao 2.1
+
+Este programa e' distribuido na esperanca de que lhe seja util,
+mas SEM QUALQUER GARANTIA; nem mesmo a garantia implicita de
+COMERCIALIZACAO ou ADAPTACAO A UM PROPOSITO PARTICULAR.  Veja
+a GNU Lesser General Public License para mais detalhes.
+
+Caso voce nao tenha recebido uma copia da GNU Lesser General
+Public License juntamente com este programa, e' possivel obte-la
+no endereco: http://www.gnu.org/copyleft/lesser.html.
+
+=cut
+
+use strict;
+use warnings FATAL => 'all';
+
+use Getopt::Long;
+use URI::URL;
+use Archive::Zip;
+use File::Basename;
+use File::Copy qw(copy);
+
+use SGI::PackPDV;
+use SGI::GetPassword;
+
+
+# Obtenção da linha de comando
+# =============================================================================
+
+
+# Declaração de variáveis...
+my (
+	$manifesto,
+	$pre_backup,
+	$pos_backup,
+	$pre_install,
+	$pos_install,
+	$produto,		# Nome. Exemplo: "SolidusPDV"
+	$versao,			# Versão. Exemplo: "1.3"
+	$release,		# Release. Exemplo: "1" ou "1b"
+	$sgi_dir,		# Diretorio raiz para instalação
+	$url,				# URL para download.
+		# Ex.: "ftp://usuario:senha@servidor.dominio/path/basico/dos/pacotes/"
+	$echo,			# Habilita modo "verbose"
+	$quit_on_warn,	# Interromper em caso de erro
+	$backup,			# Faz APENAS backup da instalação local
+	$download,		# Faz APENAS download dos pacotes
+	$check,			# Faz APENAS verificacao dos pacotes
+	$install,		# Faz APENAS a instalação dos pacotes
+	$all,				# Faz, em ordem, as seguintes operações:
+						#	1) download
+						#	2) verificação
+						#	3) backup
+						#	4) instalação
+	$cmdline
+);
+
+
+# Reset de variáveis
+$pre_backup = undef;
+$pos_backup = undef;
+$pre_install = undef;
+$pos_install = undef;
+
+
+# Leitura da linha de comando...
+$cmdline = GetOptions(
+	"manifesto=s"		=> \$manifesto,
+	"produto=s"			=> \$produto,
+	"versao=s"			=> \$versao,
+	"release=s"			=> \$release,
+	"sgi_dir=s"			=> \$sgi_dir,
+	"backup"				=> \$backup,
+	"download"			=> \$download,
+	"check"				=> \$check,
+	"install"			=> \$install,
+	"all"					=> \$all,
+	"url=s"				=> \$url,
+	"echo"				=> \$echo,
+	"quit_on_warn"		=> \$quit_on_warn
+);
+
+
+# Echo de apresentação da aplicação...
+print "\nSGI::PackPDV - " . $SGI::PackPDV::VERSION . "\n";
+print "Copyright (c) Chris Robert Tonini, 2015\n\n";
+
+
+# Validação (pela biblioteca) de argumentos
+if (!$cmdline)	{
+	print STDERR "Linha de comando invalida!\n";
+	print STDERR "unpack_pdv --produto=<produto> --versao=<versao> ";
+	print STDERR "--release=<release> \\\n";
+	print STDERR "   [--sgi_dir=\"<sgi_dir>\"] [--url=<url>] --all | ";
+	print STDERR "[--backup] \\\n";
+	print STDERR "   [--download] [--check] [--install] [--echo] ";
+	print STDERR "[--quit_on_warn]\n";
+	print STDERR "ou:\n";
+	print STDERR "pack_pdv --manifesto=<url_manifesto>\n";
+
+	print STDERR "\nOnde:\n";
+	print STDERR "\t<url_manifesto>\n";
+	print STDERR "\t\tURL completa (de FTP) para obtencao do manifesto do ";
+	print STDERR "release.\n\t\tEx.:\n";
+	print STDERR "\t\t\"ftp://usr:pwd\@srv.dominio/raiz/path/do/release/manifesto.txt\"\n";
+	print STDERR "\t<produto>\n";
+	print STDERR "\t\tIdentificacao do produto. Ex.: \"teste\"\n";
+	print STDERR "\t<versao>\n";
+	print STDERR "\t\tVersao do produto. Ex.: \"1.0\"\n";
+	print STDERR "\t<release>\n";
+	print STDERR "\t\tRelease do produto. Ex.: \"1\"\n";
+	print STDERR "\t<sgi_dir>\n";
+	print STDERR "\t\tInforma o diretorio base para a instalacao.\n";
+	print STDERR "\t\tSe omitido, e' assumido \"/sgi/pdv/\"\n";
+	print STDERR "\t<url>\n";
+	print STDERR "\t\tURL (base)para download de FTP. Por exemplo:\n";
+	print STDERR "\t\t\"ftp://usr:pwd\@srv.dominio/raiz/\"\n";
+	print STDERR "\t\tObs.: Obrigatorio somente caso \"--download\" ";
+	print STDERR "(ou \"--all\")\n";
+	print STDERR "\t\tseja defnido.\n";
+	print STDERR "\t\tA esta URL sera adicionada pasta especifica do ";
+	print STDERR "release.\n\t\tProduzindo a URL para download. Ex.:\n";
+	print STDERR "\t\t\"ftp://usr:pwd\"srv.dominio/raiz/teste-1.0-1/\"\n";
+	print STDERR "\t--all\n";
+	print STDERR "\t\tHabilita todas as flags: --download, --check, --backup\n";
+	print STDERR "\t\te --install\n";
+	print STDERR "\t--download\n";
+	print STDERR "\t\tInforma que deve ser feito download dos pacotes.\n";
+	print STDERR "\t\tEste argumento, torna obrigatoria a definicao ";
+	print STDERR "de \"--url\".\n";
+	print STDERR "\t--check\n";
+	print STDERR "\t\tInforma que deve ser feita verificacao dos componentes\n";
+	print STDERR "\t\tobtidos via download.\n";
+	print STDERR "\t--backup\n";
+	print STDERR "\t\tEspecifica que deve ser realizada copia de seguranca\n";
+	print STDERR "\t\tdos arquivos da instalacao local (caso existam).\n";
+	print STDERR "\t--install\n";
+	print STDERR "\t\tDefine que o conteudo dos componentes obtidos via FTP\n";
+	print STDERR "\t\tdevem ser instalados localmente.\n";
+	print STDERR "\n\n";
+
+	exit(4);
+}
+
+
+# Atribuição das sub-tarefas a executar
+if ($all)	{
+	$backup = 1;
+	$download = 1;
+	$check = 1;
+	$install = 1;
+}
+
+# Validação das sub-tarefas selecionadas
+# Pelo menos uma ação precisa ser especificada. Caso contrário,
+# é efetuado o download do manifesto, e a execução simplesmente pára
+if ( (!$backup) and (!$download) and (!$check) and (!$install))	{
+	print STDERR "Pelo menos uma acao precisa ser solicitada!\n";
+	print STDERR "A saber:\n";
+	print STDERR "\t--backup\n";
+	print STDERR "\t--download\n";
+	print STDERR "\t--check\n";
+	print STDERR "\t--install\n";
+	print STDERR "Ou --all, para solicitar todas.\n";
+	print STDERR "Consulte \"man unpack_pdv\" para mais informacoes.\n\n";
+	exit(4);
+}
+
+
+if ($manifesto)	{
+	
+	print "Processando manifesto: \"$manifesto\"...\n";
+	
+	my (
+		$tmp_ftp,		# Objeto de FTP
+		$tmp_path,		# Path de FTP
+		$tmp_hnd,		# Handler para o manifesto
+		$tmp_line,		# Linha lida do manifesto
+		$tmp_key,		# "Chave" de linha processada do manifesto
+		$tmp_data,		# "Valor" associado à chave no manifesto
+		$tmp_uri,		# Objeto handler da URL
+		$tmp_msg,		# Mensagem de erro do FTP
+		@tmp_keys		# Chaves atribuidas por manifesto
+	);
+	
+	@tmp_keys = ();
+	
+	print "Parsing \"$manifesto\"...\n" if ($echo);
+	$tmp_uri = URI->new($manifesto) or die "URL: $@\n\n";
+	
+	print "Download \"" . basename($tmp_uri->path) . "\"...\n" if ($echo);
+	if (!($tmp_ftp = Net::FTP->new($tmp_uri->host)))	{
+		$tmp_msg = $@;
+		chomp($tmp_msg);
+		die "Conexao FTP: $tmp_msg\n\n";
+	}
+	
+	my $tmp_pwd = $tmp_uri->password;
+	$tmp_pwd = SGI::GetPassword::Get($tmp_uri . "\@" . $tmp_uri->host .
+					"\nSenha: ") if ($tmp_pwd eq '-');
+	if (!($tmp_ftp->login($tmp_uri->user, $tmp_pwd)))	{
+		$tmp_msg = $tmp_ftp->message;
+		chomp($tmp_msg);
+		die "Autenticacao FTP: $tmp_msg\n\n";
+	}
+	
+	if (!($tmp_ftp->cwd(dirname($tmp_uri->path))))	{
+		$tmp_msg = $tmp_ftp->message;
+		chomp($tmp_msg);
+		die "CWD FTP: $tmp_msg\n\n";
+	}
+	
+	$tmp_ftp->binary;
+	
+	if (!($tmp_path = $tmp_ftp->get(basename($tmp_uri->path))))	{
+		$tmp_msg = $tmp_ftp->message;
+		chomp($tmp_msg);
+		die "GET FTP: $tmp_msg\n\n";
+	}
+	
+	$tmp_ftp->quit;
+	
+	# Atribuição de URL para download dos componentes do release
+	$url = $tmp_uri->scheme . "://";
+	$url .= ($tmp_uri->user ? $tmp_uri->user .
+				($tmp_uri->password ? ":" . $tmp_uri->password : "") . "@" : "");
+	$url .= $tmp_uri->host . dirname(dirname($tmp_uri->path)) . "/";
+	
+	open($tmp_hnd, "<$tmp_path") or die "\"$tmp_path\": $!\n\n";
+	
+	while ($tmp_line = <$tmp_hnd>)	{
+		chomp($tmp_line);
+		next if ($tmp_line =~ /^$/);	# Ignora linhas vazias
+		next if ($tmp_line =~ /^#/);	# Ignora comentários
+		next if ($tmp_line =~ /^\s/);	# Ignora linhas que se iniciem com branco
+		$tmp_line =~ s{#.*$}{};			# Remove comentários na mesma linha
+		($tmp_key, $tmp_data) = split(/:/, $tmp_line);
+		
+		# Trim de chave e valores
+		$tmp_key =~ s{^\s*}{};
+		$tmp_key =~ s{\s*$}{};
+		$tmp_data =~ s{^\s*}{};
+		$tmp_data =~ s{\s$}{};
+		
+		# Teste de palavras-chave implementadas
+		if ($tmp_key eq 'PRODUTO')	{
+			if (!$produto)	{
+				$produto = $tmp_data;
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "produto");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --produto=$produto\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'VERSAO')	{
+			if (!$versao)	{
+				$versao = $tmp_data;
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "versao");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --versao=$versao\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'RELEASE')	{
+			if (!$release)	{
+				$release = $tmp_data;
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "release");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --release=$release\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'SGI_DIR')	{
+			if (!$sgi_dir)	{
+				$sgi_dir = $tmp_data;
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "sgi_dir");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --sgi_dir=\"$sgi_dir\"\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'DOWNLOAD')	{
+			if (!$download)	{
+				$download = ($tmp_data eq '1' ? 1 : 0);
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "download");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": " . ($download ? "" : "NOT ") . "--download\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'CHECK')	{
+			if (!$check)	{
+				$check = ($tmp_data eq '1' ? 1 : 0);
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "check");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": " . ($check ? "" : "NOT ") . "--check\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'BACKUP')	{
+			if (!$backup)	{
+				$backup = ($tmp_data eq '1' ? 1 : 0);
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "backup");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": " . ($backup ? "" : "NOT ") . "--backup\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'INSTALL')	{
+			if (!$install)	{
+				$install = ($tmp_data eq '1' ? 1 : 0);
+				print "MANIFESTO" if ($echo);
+				push(@tmp_keys, "install");
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": " . ($install ? "" : "NOT ") . "--install\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'PRE_BACKUP')	{
+			$pre_backup = $tmp_data;
+			push(@tmp_keys, 'PRE_BACKUP');
+		}
+		elsif ($tmp_key eq 'POS_BACKUP')	{
+			$pos_backup = $tmp_data;
+			push(@tmp_keys, 'POS_BACKUP');
+		}
+		elsif ($tmp_key eq 'PRE_INSTALL')	{
+			$pre_install = $tmp_data;
+			push(@tmp_keys, 'PRE_INSTALL');
+		}
+		elsif ($tmp_key eq 'POS_INSTALL')	{
+			$pos_install = $tmp_data;
+			push(@tmp_keys, 'POS_INSTALL');
+		}
+	}
+	
+	close($tmp_hnd);
+	
+	print scalar(@tmp_keys) . " definidas por manifesto.\n";
+	if (scalar(@tmp_keys) > 0)	{
+		print "Sao elas:\n";
+		foreach (@tmp_keys)	{
+			print "\t$_\n";
+		}
+	}
+	print "\n";
+}
+
+
+# Validação de parametros obrigatórios
+if (!$url)	{
+	print STDERR "--url=<...> e' argumento obrigatorio!\n\n";
+	exit(4);
+}
+if (!$produto or !$versao or !$release)	{
+	print STDERR "--pacote=<...>, --versao=<...> e --release=<...> ";
+	print STDERR "sao argumentos obrigatorios!\n\n";
+	exit(4);
+}
+if (!($sgi_dir))	{
+	$sgi_dir = '/sgi/pdv/';
+}
+
+# Garantir que a pasta apontada por $sgi_dir, tenha o terminador '/'
+$sgi_dir .= (substr($sgi_dir, -1, 1) ne '/' ? '/' : '');
+
+
+# Preparação de valores de uso global
+# =============================================================================
+
+# Declaração de variáveis
+my (
+	$vrs,					# formatador de versão
+	$chk,					# nome do arquivo contendo os CHKs
+	$dat,					# nome do arquivo contendo os DATs
+	$def,					# nome do arquivo contendo as DEFs
+	$flx,					# nome do arquivo contendo os FLX
+	$prefixo,			# prefixo comum a todos os arquivos
+	$sufixo,				# sufixo incluindo versão e extensão de arquivo
+	$sig,					# arquivo contendo hashes md5
+	$src_flx,			# Lista de arquivos .flx
+	$src_dat,			# Lista de arquivos da base de dados
+	$src_chk,			# Lista de arquivos de checksum
+	$src_def,			# Lista de arquivos .def
+	$tmp_dir,			# pasta para download temporário
+	@list,				# Lista de arquivos a baixar
+	@txt_list,			# Lista de arquivos de texto, com detalhes dos pacotes
+	$backup_ok,			# Indicador de status do processo de backup
+	$install_ok,		# Indicador de status do processo de instalação
+	$tmp_cmd				# Linha de comando (temp.) para scripts
+);
+
+# Formatacao da versao, apenas contendo digitos numericos...
+$vrs = $versao . $release;
+$vrs =~ s/[.:,-]//g;
+
+# Definicao de prefixo e sufixo para todos os pacotes
+$prefixo = $produto . "_";
+$sufixo = "_v$vrs.zip";
+
+# Nomeacao de componentes...
+$chk = $prefixo . "chk" . $sufixo;
+$dat = $prefixo . "dat" . $sufixo;
+$def = $prefixo . "def" . $sufixo;
+$flx = $prefixo . "flx" . $sufixo;
+$sig = $prefixo . "md5_v$vrs.sig";
+@list = ($chk, $dat, $def, $flx);
+
+# Arquivos complementares, de texto
+($src_flx = $flx) =~ s{\.zip}{\.txt};
+($src_dat = $dat) =~ s{\.zip}{\.txt};
+($src_chk = $chk) =~ s{\.zip}{\.txt};
+($src_def = $def) =~ s{\.zip}{\.txt};
+@txt_list = ($src_flx, $src_dat, $src_chk, $src_def);
+
+
+# Nomeação de diretório temporário
+$tmp_dir = "./tmp_$$";
+
+# Criação de pasta temporária (caso já não exista)
+if (! -d $tmp_dir)	{
+	mkdir $tmp_dir or die "MKDIR(\"$tmp_dir\"): $!\n\n";
+}
+
+# Usar diretório temporário como diretório de trabalho
+chdir $tmp_dir or die "CHDIR(\"$tmp_dir\"): $!\n\n";
+
+
+# DOWNLOAD
+# =============================================================================
+if ($download)	{
+	
+	print "Download de $produto-$versao-$release...\n";
+	
+	# Declaração de variáveis específicas para utilização do FTP
+	my (
+		$host,			# servidor de FTP
+		$user,			# usuário de FTP
+		$password,		# senha de FTP
+		$folder,			# pasta (remota) base para download
+		$uri,				# instancia de objeto URI
+		$ftp,				# instancia de Net::FTP
+		$msg,				# formatador de mensagens (de FTP)
+		$size				# tamanho para verificacao de download
+	);
+	
+	# Parsing da URL para variáveis de conexão...
+	$uri = URI->new($url) or die "URL parser: $@\n\n";
+	$host = $uri->host;
+	$user = $uri->user;
+	$password = $uri->password;
+	$folder = $uri->path . $produto . "-" . $versao . "-" . $release;
+	
+	# Estabelecer conexão de FTP
+	if (!($ftp = Net::FTP->new($host)))	{
+		$msg = $@;
+		chomp($msg);
+		die "Conexao FTP: $msg\n\n";
+	}
+	
+	# Autenticacao de usuário
+	if (!($ftp->login($user, $password)))	{
+		$msg = $ftp->message;
+		die "Autenticacao FTP: $msg\n\n";
+	}
+	
+	# Entrar no diretorio (remoto) dos pacotes...
+	if (!($ftp->cwd($folder)))	{
+		$msg = $ftp->message;
+		die "FTP => CWD(\"$folder\"): $msg\n\n";
+	}
+	
+	$ftp->binary;
+	
+	# Obtenção dos arquivos do pacote
+	my @to_get = @list;
+	push(@to_get, $sig);
+	foreach my $file (@to_get)	{
+		# Obtenção do tamanho do arquivo remoto
+		if (!($ftp->size($file)))	{
+			$msg = $ftp->message;
+			die  "FTP => download(size) \"$file\": $msg\n\n" if ($quit_on_warn);
+			warn "FTP => download(size) \"$file\": $msg\n\n";
+		}
+		# Download propriamente dito
+		if (!($ftp->get($file)))	{
+			$msg = $ftp->message;
+			die  "FTP => download \"$file\": $msg\n\n" if ($quit_on_warn);
+			warn "FTP => download \"$file\": $msg\n\n";
+		}
+		else	{
+			if (! -e $file)	{
+				die  "FTP => download(test) \"$file\": Arquivo local nao " .
+						"encontrado!\n\n" if ($quit_on_warn);
+				warn "FTP => download(test) \"$file\": Arquivo local nao " .
+						"encontrado!\n\n";
+			}
+			else	{
+				print "Download de \"$file\" concluido!\n" if $echo;
+				my $tmp_size = -s $file;
+				if ($tmp_size)	{
+					if ($size != $tmp_size)	{
+						die  "Tamanhos diferem. Provavel corrupcao de arquivo!\n\n"
+								if ($quit_on_warn);
+						warn "Tamanhos diferem. Provavel corrupcao de arquivo!\n\n";
+					}
+				}
+				else	{
+					die  "Impossivel verificar o tamanho de $file!\n\n"
+							if ($quit_on_warn);
+					warn "Impossivel verificar o tamanho de $file!\n\n";
+				}
+			}
+		}
+	}
+
+	$ftp->quit;
+	print "Transferencia concluida!\n\n";
+}
+
+
+# CHECK
+# =============================================================================
+if ($check)	{
+	
+	print "Verificacao de componentes de " .
+				"$produto-$versao-$release...\n";
+	
+	# 1o PASSO) Descompactar todos os .zip, e gerar os respectivos arquivos de
+	#					texto, contendo listagem completa de seu conteudo.
+	foreach my $file (@list)	{
+		
+		print "Descompactar $file:\n" if $echo;
+		
+		# Instanciar manipulador de arquivo .zip
+		my $zip = Archive::Zip->new($file);
+		
+		# Criar arquivo de texto, contendo a lista dos
+		# arquivos descompactados, para posterior uso
+		# do objeto da classe SGI::PackPDV
+		(my $flist = $file) =~ s{\.zip$}{\.txt};
+		
+		# Instanciar handler e abrir arquivo-texto.
+		my $hlist;
+		open($hlist, ">$flist") or die "$flist: $!\n";
+		
+		# Processar o conteúdo do arquivo .zip
+		my @members = $zip->members;
+		foreach my $member (@members)	{
+			print "\t" . $member->fileName . "\n" if $echo;
+			$member->extractToFileNamed($member->fileName);
+			
+ 			# Inserir nome do arquivo no arquivo-texto (lista)
+			print $hlist $member->fileName . "\n";
+		}
+		
+		# Fechar arquivo de texto (lista)
+		close($hlist);
+	}
+	
+	# 2o PASSO) Instanciar SGI::PackPDV para que o objeto faça a verificação
+	#					completa dos componentes do pacote, seguindo a mesma lógica
+	#					de sua geração.
+	my $obj = SGI::PackPDV->new(
+			prefix				=> $produto,
+			version				=> $versao . "-" . $release,
+			src_flx				=> $src_flx,
+			src_dat				=> $src_dat,
+			src_chk				=> $src_chk,
+			src_def				=> $src_def,
+			verbose				=> $echo,
+			break_on_errors	=> $quit_on_warn
+	) or die "SGI::PackPDV" . ($@ ? "($@)" : "") . "\n";
+	
+	# Verificar se o pacote está completo...
+	if (!($obj->chkFiles()))	{
+		exit(2);
+	}
+	
+	# Verificar as assinaturas...
+	# Importante: É passado como argumento um HASH VAZIO = "()".
+	#					Assim, a biblioteca irá carregar o conteúdo
+	#					do arquivo de texto contendo os hashes gerados
+	#					no processo de instalação.
+	if ($obj->chkMD5(()))	{
+		print "Verificacao concluida!\n\n";
+	}
+	else	{
+		exit(1);
+	}
+}
+
+
+# BACKUP
+# =============================================================================
+if ($backup)	{
+	if ($pre_backup)	{
+		print "Script pre-backup...\n";
+		$tmp_cmd = 'cd ' . $sgi_dir . ' && ' . $pre_backup;
+		system($tmp_cmd) == 0 or
+			die "PRE_BACKUP: $?\n";
+	}
+	
+	print "Backup...\n";
+	$backup_ok = 1;
+	
+	mkdir("./backup/") or die "MKDIR(\"./backup/\"): $!\n";
+	
+	foreach my $list (@txt_list)	{
+		chomp($list);
+		
+		# Variáveis temporárias
+		my (
+			$hnd,		# Handler de arquivo de texto, lista de arquivos
+			$line		# Nome de cada arquivo a ser salvo
+		);
+		
+		# Processar arquivo de lista
+		open($hnd, "<$list") or die "$list: $!\n\n";
+		
+		while ($line = <$hnd>)	{
+			chomp($line);
+			
+			# Variáveis temporárias para inferir
+			# diretórios de destino do backup
+			my ($file, $path) = fileparse($line);
+			my $src = $sgi_dir . $path . $file;
+			my $dst = './backup/' . $path . $file;
+			
+			# Verificar a existência do arquivo de origem
+			if (-e $src)	{
+				# Verificar a existência do diretório de destino
+				if (! -d "./backup/$path")	{
+					# Se não encontrado, tenta criá-lo
+					mkdir("./backup/$path")
+						or die "MKDIR(\"./backup/$path\"): $!\n\n";
+				}
+				if (!copy($src, $dst))	{
+					# Arquivos existentes no diretório origem, constando da lista de
+					# elementos atualizáveis, cujas cópias resultem em falha, devem
+					# sinalizar condição de erro.
+					die  "COPY(\"$src\",\"$dst\"): $!\n" if ($quit_on_warn);
+					warn "COPY(\"$src\",\"$dst\"): $!\n";
+					$backup_ok = 0;
+				}
+			}
+			else	{
+				# Arquivos não encontrados para cópia não representam erros,
+				# pois podem se tratar de adições à instalação. Portanto, não
+				# estando presentes no diretório pré-insttalação.
+				warn "$src nao encontrado! Copia de seguranca nao realizada.\n";
+			}
+		}
+		
+		close($hnd);
+	}
+	
+	print "Lista de arquivos processada!\n";
+	print "Backup realizado com " . ($backup_ok ? "sucesso" : "falha") . "!\n\n";
+	
+	die "Verifique as mensagens de erro!\n\n" if (!$backup_ok);
+	
+	print "Copia de seguranca disponivel em \"$tmp_dir/backup\"\n";
+	
+	if ($pos_backup)	{
+		print "Script pos-backup...\n";
+		$tmp_cmd = 'cd ' . $sgi_dir . ' && ' . $pos_backup;
+		system($tmp_cmd) == 0 or
+			die "POS_BACKUP: $?\n";
+	}
+}
+
+
+# INSTALL
+# =============================================================================
+sub copy_dir_to_dir	{
+	my $dst	= shift;
+	my $dir	= shift;
+	my $hnd;
+	my $ok	= 1;
+	
+	opendir($hnd, $dir) or die "$dir: $!\n\n";
+	
+	while (my $entry = readdir($hnd))	{
+		# Novamente, ignorar entradas "." e ".."
+		# por motivos ÓBVIOS.
+		next if ($entry eq ".");
+		next if ($entry eq "..");
+		
+		# Se encontrar algum sub-diretorio, processa-lo
+		# recursivamente...
+		if (-d $entry)	{
+			my $dst_path = $dst . $entry . "/";
+			print " + copiando \"$entry\" para \"$dst_path\"...\n" if ($echo);
+			$ok = 0 if (!copy_dir_to_dir($dst_path, $entry))
+		}
+		else	{
+			# Realizar a copia do arquivo da pasta temporária
+			# para a mesma árvore, a partir do diretório "raiz" informado.
+			my $src_entry = $dir . "/" . $entry;
+			my $dst_entry = $dst . $entry;
+			print "   > copiando \"$src_entry\" => \"$dst_entry\"\n" if ($echo);
+			if (!copy($src_entry, $dst_entry))	{
+				die  "COPY(\"$src_entry\",\"$dst_entry\"): $!\n" if ($quit_on_warn);
+				warn "COPY(\"$src_entry\",\"$dst_entry\"): $!\n";
+				$ok = 0;
+			}
+		}
+	}
+	
+	close($hnd);
+	
+	return ($ok);
+}
+
+if ($install)	{
+	if ($pre_install)	{
+		print "Script pre-install...\n";
+		$tmp_cmd = 'cd ' . $sgi_dir . ' && ' . $pre_install;
+		system($tmp_cmd) == 0 or
+			die "PRE_INSTALL: $?\n";
+	}
+	print "Instalacao...\n";
+	$install_ok = 1;
+	
+	my $hnd_dir;
+	
+	opendir($hnd_dir, "./") or die "./: $!\n\n";
+	
+	while (my $entry = readdir($hnd_dir))	{
+		# Não processar entradas "." e ".."
+		# (por razões ÓBVIAS)
+		next if ($entry eq ".");
+		next if ($entry eq "..");
+		
+		# Nao processar arquivos da pasta temporária.
+		# São os arquivos de download dos componentes
+		# da instalação.
+		if (! -d $entry)	{
+			print " # ignorando arquivo \"$entry\"\n" if ($echo);
+			next;
+		}
+		
+		# Também não procesar a pasta "backup", pois alí se
+		# encontram arquivos originais da instalação atual, salvos
+		# para eventual retrocesso.
+		if ($entry eq 'backup')	{
+			print " # ignorando sub-diretorio \"backup\"\n" if ($echo);
+			next;
+		}
+		
+		# Processar sub-diretório $entry
+		my $dst_path = $sgi_dir . $entry . "/";
+		print " + copiando \"$entry\" para \"$dst_path\"...\n" if ($echo);
+		$install_ok = 0 if (!copy_dir_to_dir($dst_path, $entry));
+	}
+	
+	close($hnd_dir);
+	
+	print "Cache de arquivos processado!\n";
+	print "" . ($install_ok ? "Sucesso" : "Falha") . " na instalacao!\n\n";
+	
+	die "Verifique as mensagens de erro!\n\n" if (!$install_ok);
+	
+	if ($pos_install)	{
+		print "Script pos-install...\n";
+		$tmp_cmd = 'cd ' . $sgi_dir . ' && ' . $pos_install;
+		system($tmp_cmd) == 0 or
+			die "POS_INSTALL: $?\n";
+	}
+}

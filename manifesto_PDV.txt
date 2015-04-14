@@ -1,0 +1,31 @@
+# MANIFESTO
+
+# Dados do pacote
+PRODUTO: teste
+VERSAO: 1.0
+RELEASE: 1
+NOTAS:
+	Release para teste do conjunto formado pelo empacotador/instalador
+	automatizado.
+DATA: 13/03/2015
+
+# Destino (padrao) da instalacao
+SGI_DIR: /sgi/pdv/
+
+# Fases da instalacao
+DOWNLOAD: 1
+CHECK: 1
+BACKUP: 1
+INSTALL: 1
+
+# Fontes de arquivos
+SRC_DAT: dat.txt
+SRC_FLX: flx.txt
+SRC_DEF: def.txt
+SRC_CHK: chk.txt
+
+# Fontes de scripts
+PRE_BACKUP: pre_backup.sh
+POS_BACKUP: pos_backup.sh
+PRE_INSTALL: pre_install.sh
+POS_INSTALL: pos_install.sh

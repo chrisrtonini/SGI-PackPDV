@@ -1,0 +1,40 @@
+SGI-PackPDV
+
+Pacote contendo utilitarios basicos para gerar volumes de instalacao
+do SolidusPDV, de modo a gerar as assinaturas e calculos de hashes,
+e realizar o deploy em servidor de FTP.
+
+INSTALACAO
+
+Para instalar este modulo, execute os seguintes comandos:
+
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+
+SUPORTE E DOCUMENTACAO
+
+Depois de instalado, voce pode obter documentacao para o modulo, com o
+comando perldoc.
+
+    perldoc SGI::PackPDV
+
+
+LICENCA E DIREITOS AUTORAIS
+
+Copyright (C) 2015 Chris Robert Tonini
+
+Este programa e' software livre; voce pode redistribui-lo e/ou
+modifica-lo sob os termos da GNU Lesser General Public License,
+publicada pela Free Software Foundation; em sua versao 2.1
+
+Este programa e' distribuido na esperanca de que lhe seja util,
+mas SEM QUALQUER GARANTIA; nem mesmo a garantia implicita de
+COMERCIALIZACAO ou ADAPTACAO A UM PROPOSITO PARTICULAR.  Veja
+a GNU Lesser General Public License para mais detalhes.
+
+Caso voce nao tenha recebido uma copia da GNU Lesser General
+Public License juntamente com este programa, e' possivel obte-la
+no endereco: http://www.gnu.org/copyleft/lesser.html.

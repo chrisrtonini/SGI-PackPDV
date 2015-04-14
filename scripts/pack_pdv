@@ -1,0 +1,491 @@
+#!/usr/bin/perl
+
+=head1 NOME
+
+pack_pdv - Utilitario para criacao de pacotes de instalacao.
+
+=head1 SINOPSE
+
+Para a criacao de um release, e' necessaria a producao de seus componentes.
+Estes componentes correspondem aos elementos:
+
+=over 3
+
+=item * dados
+
+Arquivos de bases de dados. Sejam indices, arquivos de dados, cabecalhos, etc.
+
+=item * executaveis
+
+Basicamente, programas Dataflex compilados.
+
+=item * checksum
+
+Arquivos de dados, contendo informacoes de estrutura da propria base de dados,
+de maneira a permitir integridade de tabelas.
+
+=item * definicoes
+
+Arquivos em formato texto, contendo definicoes de tabelas de dados.
+
+=item * assinaturas
+
+Arquivo contendo I<hashes> MD5 para cada arquivo contido em cada componente.
+Possibilita a verificacao de integridade destes, depois da realizacao de 
+I<download>, oferecendo assim, uma maneira de evitar o processamento de
+componentes corrompidos.
+
+=back
+
+O processo de criacao de componentes de instalacao, dos softwares desenvolvidos
+pela SGI Sistemas tem fases distintas:
+
+=over 3
+
+=item * verificacao
+
+Nesta fase, arquivos de texto contendo listas com o I<path> dos arquivos que
+deverao ser incluidos em cada componente, sao processados de modo a verificar
+se cada cada arquivo de fato existe e se pode ser copiado.
+
+=item * geracao
+
+Em estando B<Ok> a C<verificacao>, e' possivel comandar a geracao dos 
+componentes do release, que sao basicamente, arquivos C<.zip>, correspondendo
+aos elementos descritos acima (dados, executaveis, checksum e definicoes).
+
+=item * assinatura
+
+O arquivo de assinaturas e' gerado seguindo as mesmas listas de arquivos 
+especificadas para os passos de C<verificacao> e C<geracao>. Apenas um arquivo
+e' gerado, com nome descritivo do release em questao.
+
+=item * upload
+
+Depois de todos os componentes gerados localmente, e' realizado o I<upload> dos
+arquivos, em pasta remota especifica para o release. O aplicativo tentara'
+criar a pasta, caso a mesma nao exista.
+
+E' imprescindivel o acesso de escrita ao repositorio de FTP para a realizacao
+desta etapa.
+
+=back
+
+=head1 SINTAXE
+
+A sintaxe pode ser baseada no manifesto do release:
+
+    pack_pdv -m | --manifesto <manifesto>
+
+Onde C<< <manifesto> >> e' o nome/caminho de um arquivo texto, contendo a
+especificao do pacote conforme modelo definido em L<MANIFESTO>.
+
+A partir do conteudo de C<manifesto.txt> serao definidos os argumentos:
+
+    --produto=...
+    --versao=...
+    --release=...
+    --base=...
+    --def=...
+    --flx=...
+    --chk=...
+
+Ou alternativamente, a linha de comando pode definir individualmente cada um de
+seus argumentos:
+
+    pack_pdv \
+      -p | --produto <identificacao> \ # Ex.: "teste"
+      -v | --versao <versao> \         # Ex.: "1.0"
+      -r | --release <release> \       # Ex.: "1"
+      -u | --url <url> \     # Ex.: "ftp://usr:pwd@srv.dominio/raiz/"
+      -e | --echo \                    # Habilita echo 'verbose'
+      -q | --quit_on_warn              # Forca interrupcao de lacos de 
+                                       # processamento de arquivos em caso de
+                                       # qualquer falha
+
+As I<flags> C<--echo> e C<--quit_on_warn> sao opcionais, e, caso omitidos sao
+assumidos valores I<false> para ambas.
+
+O atributo C<--url> e' B<obrigatorio> pois define a URL para I<upload> dos
+componentes do release.
+
+Caso a linha de comando defina simultaneamente C<--manifesto> e outros 
+argumentos nele contidos, o manifesto sera processado, contudo os parametros
+definidos na linha de comando tem prioridade, e portanto, nao serao 
+redefinidos.
+
+=head1 MANIFESTO
+
+O manifesto e' um arquivo contendo as informacoes necessarios aa producao
+do release. Seu conteudo segue o seguinte formato:
+
+    # Exemplo de arquivo de manifesto
+    
+    # Dados do pacote
+    PRODUTO: teste
+    VERSAO: 1.0
+    RELEASE: 1
+    
+    # Fontes de arquivos
+    SRC_DAT: dat.txt
+    SRC_FLX: flx.txt
+    SRC_DEF: def.txt
+    SRC_CHK: chk.txt
+    
+    # Fontes de scripts
+    # IMPORTANTE: o processamento de I<scripts> ainda
+    #             nao esta disponivel nesta versao
+    PRE_BACKUP: pre_backup.sh
+    POS_BACKUP: pos_backup.sh
+    PRE_INSTALL: pre_install.sh
+    POS_INSTALL: pos_install.sh
+
+=head2 IMPORTANTE
+
+No modelo de manifesto descrito no item anterior, figuram apenas os elementos
+necessarios para geracao de I<release>, ou seja, normalmente serao encontrados
+manifestos com diversos outros campos. Estes, necessarios ao processo de
+instalacao.
+
+=head1 AUTOR
+
+Chris Robert Tonini, C<< <chrisrtoniniE<64>gmail.com> >>
+
+
+=head1 SUPORTE
+
+Voce pode encontrar documentacao para este aplicativo atraves do comando:
+
+    perldoc pack_pdv
+
+ou ainda;
+
+    man pack_pdv
+
+Tambem,pode-se obter informacoes sobre seu modulo:
+
+    perldoc SGI:PackPDV
+
+
+=head1 INFORMACOES
+
+=head1 LICENCA E DIREITOS AUTORAIS
+
+Copyright 2015 Chris Robert Tonini.
+
+Este programa e' software livre; voce pode redistribui-lo e/ou
+modifica-lo sob os termos da GNU Lesser General Public License,
+publicada pela Free Software Foundation; em sua versao 2.1
+
+Este programa e' distribuido na esperanca de que lhe seja util,
+mas SEM QUALQUER GARANTIA; nem mesmo a garantia implicita de
+COMERCIALIZACAO ou ADAPTACAO A UM PROPOSITO PARTICULAR.  Veja
+a GNU Lesser General Public License para mais detalhes.
+
+Caso voce nao tenha recebido uma copia da GNU Lesser General
+Public License juntamente com este programa, e' possivel obte-la
+no endereco: http://www.gnu.org/copyleft/lesser.html.
+
+=cut
+
+use strict;
+use warnings FATAL => 'all';
+
+use Getopt::Long;
+use URI::URL;
+
+use SGI::PackPDV;
+use SGI::GetPassword;
+
+my (
+	$cmdline,		# Status do processamento de "GetOptions"
+	$produto,		# Nome. Exemplo: "SolidusPDV"
+	$versao,			# Versão. Exemplo: "1.3"
+	$release,		# Release. Exemplo: "1" ou "1b"
+	$url,				# URL para upload. Exemplo:
+						# "ftp://usuario:senha@servidor.dominio/path/basico/dos/pacotes/"
+	$dat,				# Componentes do zip de dados (1)
+	$def,				# Componentes do zip de defs (1)
+	$flx,				# Componentes do zip de .flx (1)
+	$chk,				# Componentes do zip de chk.* (1)
+	$sig,				# Arquivo texto para gravar hashes MD5
+	$echo,			# Habilita modo "verbose"
+	$quit_on_warn,	# Interromper em caso de advertencias
+	$manifesto,		# Arquivo de manifesto
+	$pre_backup,	# Script de pré-backup
+	$pos_backup,	# Script de pós-backup
+	$pre_install,	# Script de pré-install
+	$pos_install	# Script de pós-install
+);
+
+#
+# Notas:
+#
+# (1) Arquivo de texto, contendo em cada linha, o path absoluto para um dos
+# 		arquivos que irá compor cada um dos .zip.
+#
+
+$pre_backup = undef;
+$pos_backup = undef;
+$pre_install = undef;
+$pos_install = undef; 
+
+$cmdline = GetOptions(
+	"produto=s"			=> \$produto,
+	"versao=s"			=> \$versao,
+	"release=s"			=> \$release,
+	"url=s"				=> \$url,	
+	"base=s"				=> \$dat,
+	"def=s"				=> \$def,
+	"flx=s"				=> \$flx,
+	"chk=s"				=> \$chk,
+	"sig=s"				=> \$sig,
+	"echo"				=> \$echo,
+	"quit_on_warn"		=> \$quit_on_warn,
+	"manifesto=s"		=> \$manifesto
+);
+
+print "\nSGI::PackPDV - " . $SGI::PackPDV::VERSION . "\n";
+print "Copyright (c) Chris Robert Tonini, 2015\n\n";
+
+if (!$cmdline)	{
+	print STDERR "Linha de comando invalida!\n";
+	print STDERR "pack_pdv --produto=<produto> --versao=<versao>";
+	print STDERR "--release=<release> \\\n";
+	print STDERR "   [--url=<url>] --base=<dats.txt> --def=<defs.txt> ";
+	print STDERR "--flx=<flx.txt> \\\n";
+	print STDERR "   --chk=<chks.txt> --sig=<md5.txt> [--echo] ";
+	print STDERR "[--quit_on_warn]\n";
+	print STDERR "ou:\n";
+	print STDERR "pack_pdv --manifesto=<manifesto.txt>\n";
+
+	print STDERR "\nOnde:\n";
+	print STDERR "\t<manifesto.txt>\n";
+	print STDERR "\t\tNome de arquivo de texto contendo os dados de ";
+	print STDERR "especificacao.\n";
+	print STDERR "\t<produto>\n";
+	print STDERR "\t\tNome do produto.\n";
+	print STDERR "\t<versao>\n";
+	print STDERR "\t\tVersao do produto.\n";
+	print STDERR "\t<release>\n";
+	print STDERR "\t\tRelease do produto.\n";
+	print STDERR "\t<url>\n";
+	print STDERR "\t\tURL para upload de FTP.\n";
+	print STDERR "\t<dats.txt>\n";
+	print STDERR "\t\tLista de arquivos da base de dados.\n";
+	print STDERR "\t<defs.txt>\n";
+	print STDERR "\t\tLista de arquivos de definicoes da base de dados.\n";
+	print STDERR "\t<flx.txt>\n";
+	print STDERR "\t\tLista de arquivos de programas (Dataflex).\n";
+	print STDERR "\t<chks.txt>\n";
+	print STDERR "\t\tLista de arquivos de checksum da base de dados.\n";
+	print STDERR "\t<md5.txt>\n";
+	print STDERR "\t\tArquivo onde estarao contidas assinaturas MD5.\n";
+	print STDERR "\n";
+	print STDERR "\t--echo\n";
+	print STDERR "\t\tHabilita todas as mensagens (verbose).\n";
+	print STDERR "\t--quit_on_warn\n";
+	print STDERR "\t\tInterrompe lacos de processamento na ocorrencia de ";
+	print STDERR "qualquer\n\t\tfalha.\n";
+	print STDERR "\n\n";
+
+	exit(4);
+}
+
+if ($manifesto)	{
+	my ($tmp_hnd, $tmp_line, $tmp_key, $tmp_data);
+	
+	print "Processando manifesto: \"$manifesto\"...\n" if ($echo);
+	
+	open($tmp_hnd, "<$manifesto") or die "\"$manifesto\": $!\n\n";
+	
+	while ($tmp_line = <$tmp_hnd>)	{
+		chomp($tmp_line);
+		next if ($tmp_line =~ /^#/);	# Ignora comentários
+		next if ($tmp_line =~ /^\s/);	# Ignora linhas que se iniciem com branco
+		$tmp_line =~ s{#.*$}{};			# Remove comentários na mesma linha
+		($tmp_key, $tmp_data) = split(/:/, $tmp_line);
+		
+		# Trim de chave e valores
+		$tmp_key =~ s{^\s*}{};
+		$tmp_key =~ s{\s*$}{};
+		$tmp_data =~ s{^\s*}{};
+		$tmp_data =~ s{\s$}{};
+		
+		# Teste de palavras-chave implementadas
+		if ($tmp_key eq 'PRODUTO')	{
+			if (!$produto)	{
+				$produto = $tmp_data;
+				print "MANIFESTO" if ($echo);
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --produto=$produto\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'VERSAO')	{
+			if (!$versao)	{
+				$versao = $tmp_data;
+				print "MANIFESTO" if ($echo);
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --versao=$versao\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'RELEASE')	{
+			if (!$release)	{
+				$release = $tmp_data;
+				print "MANIFESTO" if ($echo);
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --release=$release\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'SRC_DAT')	{
+			if (!$dat)	{
+				$dat = $tmp_data;
+				print "MANIFESTO" if ($echo);
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --base=$dat\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'SRC_FLX')	{
+			if (!$flx)	{
+				$flx = $tmp_data;
+				print "MANIFESTO" if ($echo);
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --flx=$flx\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'SRC_DEF')	{
+			if (!$def)	{
+				$def = $tmp_data;
+				print "MANIFESTO" if ($echo);
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --def=$def\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'SRC_CHK')	{
+			if (!$chk)	{
+				$chk = $tmp_data;
+				print "MANIFESTO" if ($echo);
+			}
+			else	{
+				print "CMDLINE" if ($echo);
+			}
+			print ": --chk=$chk\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'PRE_BACKUP')	{
+			$pre_backup = $tmp_data;
+			print "PRE_BACKUP=$pre_backup\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'POS_BACKUP')	{
+			$pos_backup = $tmp_data;
+			print "POS_BACKUP=$pos_backup\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'PRE_INSTALL')	{
+			$pre_install = $tmp_data;
+			print "PRE_INSTALL=$pre_install\n" if ($echo);
+		}
+		elsif ($tmp_key eq 'POS_INSTALL')	{
+			$pos_install = $tmp_data;
+			print "POS_INSTALL=$pos_install\n" if ($echo);
+		}
+	}
+	
+	close($tmp_hnd);
+	
+	if (!$sig)	{
+		$sig = "$produto-$versao-$release.sig";
+		print "MANIFESTO" if ($echo);
+	}
+	else	{
+		print "CMDLINE" if ($echo);
+	}
+	print ": --sig=$sig\n" if ($echo);
+}
+
+if ((!$produto) or (!$versao) or (!$release) or (!$dat) or (!$def) or
+		(!$flx) or (!$chk) or (!$sig))	{
+	print STDERR "Argumentos obrigatorios:\n";
+	print STDERR "\t--produto\n";
+	print STDERR "\t--versao\n";
+	print STDERR "\t--release\n";
+	print STDERR "\t--base\n";
+	print STDERR "\t--def\n";
+	print STDERR "\t--flx\n";
+	print STDERR "\t--chk\n";
+	print STDERR "\t--sig\n";
+	print STDERR "\n\n";
+
+	exit(4);
+}
+
+my $objPack = SGI::PackPDV->new(
+		prefix				=> $produto,
+		version				=> $versao . "-" . $release,
+		src_flx				=> $flx,
+		src_dat				=> $dat,
+		src_chk				=> $chk,
+		src_def				=> $def,
+		pre_backup			=> $pre_backup,
+		pos_backup			=> $pos_backup,
+		pre_install			=> $pre_install,
+		pos_install			=> $pos_install,
+		verbose				=> $echo,
+		break_on_errors	=> $quit_on_warn
+) or die "Erro ao instanciar SGI::PackPDV" . ($! ? "($!)" : "") . "\n";
+
+print "Verificacao de componentes...\n";
+if (!$objPack->chkFiles())	{
+	exit(2);
+}
+
+print "Ok.\n";
+print "Geracao de pacotes da versao...\n";
+if ($objPack->genData() and
+		$objPack->genCheckSum() and
+		$objPack->genDef() and
+		$objPack->genFlx() and
+		$objPack->genScripts())	{
+	print "Pacotes gerados!\n";
+}
+else	{
+	exit(1);
+}
+
+print "Geracao de assinaturas...\n";
+$objPack->genMD5();
+
+if ($url)	{
+	print "Validacao da URL para upload...\n";
+	my ($host, $user, $password, $folder, $uri);
+	$uri = URI->new($url) or die "Erro: $@\n";
+	$host = $uri->host;
+	$user = $uri->user;
+	$password = $uri->password;
+	$folder = $uri->path . (substr($uri->path, -1, 1) ne '/' ? '/' : '') .
+					"$produto-$versao-$release";
+	
+	print "Upload dos pacotes...\n";
+	my $tmp_pwd = $password;
+	$tmp_pwd = SGI::GetPassword::Get($user . "\@" . $host . "\nSenha: ")
+					if ($password eq '-');
+	if (!$objPack->ftpDeploy($host, $user, $tmp_pwd, $folder))	{
+		exit(1);
+	}
+}
+else	{
+	print "\nURL para upload nao definida.\n";
+	print "Nenhuma transferencia sera efetuada.\n";
+}
+
+print "\nConcluido!\n\n";
