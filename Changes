@@ -62,3 +62,9 @@ Historico de revisoes de SGI-PackPDV
 			Incluido workaround para evitar uso de variavel nao inicializada,
 			no teste de tamanho do arquivo, apos a realizadao do FTP, no
 			script 'unpack_pdv'.
+
+0.07		15-04-2015/10:55
+			Corrigido bug na comparacao de tamanhos entre arquivos do repositorio
+			de FTP e suas copias locais (downloads). A variavel usada para ler o
+			tamanho do arquivo remoto, nao estava sendo inicializada, causando
+			interrupcao da execucao.

@@ -17,11 +17,11 @@ SolidusPDV.
 
 =head1 VERSAO
 
-Versao 0.06
+Versao 0.07
 
 =cut
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 
 =head1 SINOPSE

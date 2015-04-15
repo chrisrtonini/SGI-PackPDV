@@ -653,7 +653,7 @@ if ($download)	{
 			warn "FTP => download(size) \"$file\": $msg\n\n";
 		}
 		# Download propriamente dito
-		if (!($ftp->get($file)))	{
+		if (!($size = $ftp->get($file)))	{
 			$msg = $ftp->message;
 			die  "FTP => download \"$file\": $msg\n\n" if ($quit_on_warn);
 			warn "FTP => download \"$file\": $msg\n\n";
