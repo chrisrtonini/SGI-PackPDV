@@ -647,13 +647,13 @@ if ($download)	{
 	push(@to_get, $sig);
 	foreach my $file (@to_get)	{
 		# Obtenção do tamanho do arquivo remoto
-		if (!($ftp->size($file)))	{
+		if (!($size = $ftp->size($file)))	{
 			$msg = $ftp->message;
 			die  "FTP => download(size) \"$file\": $msg\n\n" if ($quit_on_warn);
 			warn "FTP => download(size) \"$file\": $msg\n\n";
 		}
 		# Download propriamente dito
-		if (!($size = $ftp->get($file)))	{
+		if (!($ftp->get($file)))	{
 			$msg = $ftp->message;
 			die  "FTP => download \"$file\": $msg\n\n" if ($quit_on_warn);
 			warn "FTP => download \"$file\": $msg\n\n";

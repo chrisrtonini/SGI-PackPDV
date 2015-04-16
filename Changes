@@ -68,3 +68,8 @@ Historico de revisoes de SGI-PackPDV
 			de FTP e suas copias locais (downloads). A variavel usada para ler o
 			tamanho do arquivo remoto, nao estava sendo inicializada, causando
 			interrupcao da execucao.
+
+0.08		15-04-2015/22:40
+			Ajustada correcao do release 0.07, pois havia ficado associada ao
+			comando "get" do Net::FTP, onde o correto eh estar associada aa invo-
+			cacao de "size".
